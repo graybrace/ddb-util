@@ -4,6 +4,12 @@ import { extract as extractTar } from "tar-stream";
 
 type EntryHandler = (data: Buffer) => unknown
 
+/**
+ * Read the tar file at the given path and pass through all found entry data
+ *
+ * @param path Path of the tar file
+ * @param onEntry Callback to receive each entry data blob
+ */
 export const extract = async(path: string, onEntry: EntryHandler) => {
     const fileStream = fs.createReadStream(path, { autoClose: true })
     return extractStream(fileStream, onEntry)

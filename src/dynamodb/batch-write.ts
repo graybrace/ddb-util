@@ -10,10 +10,23 @@ const BACKOFF_OPTIONS = {
     maxAttempts: 5
 }
 
+/*
+    Generic client capable of sending BatchWriteItem commands
+    In a non-test scenario use a DynamoDBClient
+ */
 interface DynamoDBBatchWriteClient {
     send: (cmd: BatchWriteItemCommand) => Promise<BatchWriteItemCommandOutput>
 }
 
+/**
+ * Batch PUT the given items to the specified DynamoDB table
+ *
+ * @param client Client capable of sending BatchWriteItem commands
+ * @param tableName Name of the DynamoDB table
+ * @param items Items to insert
+ *
+ * @see {@link https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_BatchWriteItem.html | BatchWriteItem}
+ */
 export const batchWrite = async(
     client: DynamoDBBatchWriteClient,
     tableName: string,
@@ -25,12 +38,18 @@ export const batchWrite = async(
         () => batchWriter.tryWrite(client),
         {
             ...BACKOFF_OPTIONS,
+            // AWS SDK backoff retries in other instances, only handle if
+            // there are remaining unprocessed items
             shouldRetry: err => err instanceof UnprocessedItemsError
         }
     )
 }
 
 class BatchWriter {
+    /**
+     * Helper class to track remaining unprocessed items through
+     * (potentially) multiple BatchWriteItem requests
+     */
     private readonly _tableName: string
     private _unprocessedItems: WriteRequest[]
 
@@ -38,22 +57,42 @@ class BatchWriter {
         this._tableName = tableName
         this._unprocessedItems = items.map(item => {
             return {
-                PutRequest: { Item: marshall(item) }
+                PutRequest: {
+                    Item: marshall(item)
+                }
             }
         })
     }
 
     async tryWrite(client: DynamoDBBatchWriteClient) {
-        const requestItems: BatchWriteItemCommandInput['RequestItems'] = {}
-        requestItems[this._tableName] = this._unprocessedItems
         const res = await client.send(new BatchWriteItemCommand({
-            RequestItems: requestItems
+            RequestItems: makeRequestItems(this._tableName, this._unprocessedItems)
         }))
         this._unprocessedItems = getUnprocessedItems(res, this._tableName)
         if (this._unprocessedItems.length > 0) {
             throw new UnprocessedItemsError()
         }
     }
+}
+
+/*
+    request items looks like
+    {
+        <TABLE NAME>: [
+            {
+                PutRequest: { Item: ... }
+            },
+            ...
+            {
+                PutRequest: { Item: ... }
+            }
+        ]
+    }
+ */
+const makeRequestItems = (tableName: string, requests: WriteRequest[]) => {
+    const requestItems: BatchWriteItemCommandInput['RequestItems'] = {}
+    requestItems[tableName] = requests
+    return requestItems
 }
 
 class UnprocessedItemsError extends Error {}
