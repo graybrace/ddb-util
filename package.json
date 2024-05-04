@@ -63,7 +63,7 @@
   },
   "dependencies": {
     "@aws-sdk/client-dynamodb": "^3.567.0",
-    "@aws-sdk/util-dynamodb": "^3.540.0",
+    "@aws-sdk/util-dynamodb": "^3.569.0",
     "tar-stream": "^3.1.7",
     "yargs": "^17.7.2"
   }
